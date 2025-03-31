@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import os
 import psycopg2
 from dotenv import load_dotenv
+import json
 
 class NewspaperCollectorPipeline:
 
@@ -184,3 +185,15 @@ class NewspaperCollectorPipeline:
             return domain
         except:
             return None
+
+class JsonWriterPipeline:
+    def open_spider(self, spider):
+        self.file = open('news_output.json', 'w', encoding='utf-8')
+
+    def close_spider(self, spider):
+        self.file.close()
+
+    def process_item(self, item, spider):
+        line = json.dumps(dict(item), ensure_ascii=False) + "\n"
+        self.file.write(line)
+        return item
