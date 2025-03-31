@@ -4,53 +4,75 @@ import uuid
 import time
 from datetime import datetime
 
+# Importar las constantes desde constants.py
+from constants import (
+    ALLOWED_DOMAINS,
+    ELDEBER_START_URL,
+    LOSTIEMPOS_START_URL,
+    AHORAELPUEBLO_START_URL
+)
+
 
 class NewspaperSpider(scrapy.Spider):
     name = "newspaper_spider"
-    allowed_domains = ["eldeber.com.bo", "lostiempos.com"]
+    allowed_domains = ALLOWED_DOMAINS  # Se obtienen de constants.py
 
     def start_requests(self):
-        # Lanzamos las URLs iniciales para cada periódico
-        # Ajusta o agrega más URLS según tu necesidad
-        # - Eldeber comenzando en la página 1
-        # - LosTiempos en la sección de "últimas noticias"
+        """
+        Lanzamos las URLs iniciales para cada periódico.
+        Ajusta o agrega más URLs según tu necesidad.
+        """
+        # Eldeber (comienza en la página 1)
         yield scrapy.Request(
-            url="https://eldeber.com.bo/economia/1",
+            url=ELDEBER_START_URL,
             callback=self.parse,
             meta={'page': 1, 'source': 'eldeber'}
         )
+
+        # Los Tiempos (sección de "últimas noticias")
         yield scrapy.Request(
-            url="https://www.lostiempos.com/ultimas-noticias",
+            url=LOSTIEMPOS_START_URL,
             callback=self.parse,
             meta={'page': 1, 'source': 'lostiempos'}
         )
-        time.sleep(1)
+
+        # Ahora El Pueblo (comienza en start=5, irá saltando de 5 en 5)
+        yield scrapy.Request(
+            url=AHORAELPUEBLO_START_URL,
+            callback=self.parse,
+            meta={'page': 5, 'source': 'ahoraelpueblo'}
+        )
+
+        time.sleep(1)  # Solo para ilustrar; en Scrapy no se recomienda usar sleep.
 
     def parse(self, response):
         """
-        Se verifica si la URL proviene de Eldeber o de Los Tiempos
-        y se llama a la función correspondiente.
+        Se verifica la fuente (source) en `response.meta` o en la URL para
+        llamar a la función de parseo correspondiente.
         """
         if response.status != 200:
             self.logger.warning(f"Failed to fetch {response.url}: {response.status}")
             return
+
         source = response.meta.get("source", "")
 
+        # Llamamos a la función de parseo específica según la fuente
         if "eldeber" in source or "eldeber" in response.url:
             yield from self.parse_eldeber(response)
         elif "lostiempos" in source or "lostiempos" in response.url:
             yield from self.parse_lostiempos(response)
+        elif "ahoraelpueblo" in source or "ahoraelpueblo" in response.url:
+            yield from self.parse_ahoraelpueblo(response)
 
     def parse_eldeber(self, response):
         """
         Lógica de parseo específica para Eldeber.
-        Extrae noticias y controla la paginación hasta la página 50.
+        Extrae noticias y controla la paginación (hasta página 5 en este ejemplo).
         """
         page = response.meta.get("page", 1)
 
         # Selecciona los bloques de noticia
         noticias = response.xpath('//div[contains(@class, "titulo-teaser-2col")]/a/h2/ancestor::article')
-
         for noticia in noticias:
             item = NewspaperItem()
 
@@ -70,7 +92,7 @@ class NewspaperSpider(scrapy.Spider):
 
             yield item
 
-        # Control de paginación
+        # Control de paginación hasta la página 5
         if page < 5:
             next_page = page + 1
             next_page_url = f"https://eldeber.com.bo/economia/{next_page}"
@@ -83,13 +105,12 @@ class NewspaperSpider(scrapy.Spider):
     def parse_lostiempos(self, response):
         """
         Lógica de parseo específica para Los Tiempos.
-        Extrae las noticias y controla la paginación hasta la página 8 (por ejemplo).
+        Extrae las noticias y controla la paginación (hasta la página 8 en este ejemplo).
         """
         page = response.meta.get("page", 1)
 
         # Extrae los bloques de noticias
         noticias = response.xpath('//section[contains(@class, "pane-views-panes")]//div[contains(@class, "views-row")]')
-
         for noticia in noticias:
             item = NewspaperItem()
 
@@ -101,7 +122,7 @@ class NewspaperSpider(scrapy.Spider):
 
             item["data_id"] = str(uuid.uuid4())
             item["titulo"] = titulo
-            item["descripcion"] = resumen  # unificamos 'resumen' en el campo 'descripcion'
+            item["descripcion"] = resumen
             item["fecha"] = fecha
             item["seccion"] = seccion
             item["url"] = response.urljoin(url_noticia)
@@ -109,14 +130,54 @@ class NewspaperSpider(scrapy.Spider):
 
             yield item
 
-        # Paginación para Los Tiempos
+        # Paginación para Los Tiempos hasta la página 8
         if page < 8:
             next_page_href = response.xpath('//li[contains(@class, "pager-next")]/a/@href').get()
             if next_page_href:
                 next_page_url = response.urljoin(next_page_href)
-                # Simplemente incrementamos el contador de página
                 yield scrapy.Request(
                     url=next_page_url,
                     callback=self.parse,
                     meta={'page': page + 1, 'source': 'lostiempos'}
                 )
+
+    def parse_ahoraelpueblo(self, response):
+        """
+        Lógica de parseo específica para Ahora El Pueblo.
+        Avanza en saltos de 5 y se detiene cuando la paginación excede start=30.
+        """
+        try:
+            noticias = response.xpath('//*[@id="sp-component"]/div/div[2]/div[2]/div/div/div')
+            for noticia in noticias:
+                try:
+                    item = NewspaperItem()
+
+                    item["data_id"] = str(uuid.uuid4())
+                    item["titulo"] = noticia.xpath('.//div[2]/div[1]/h2/a/text()').get(default="").strip()
+                    item["descripcion"] = noticia.xpath('.//div[contains(@class, "entradilla-teaser-2col")]/div/p/text()').get(default="").strip()
+                    item["fecha"] = noticia.xpath('.//time/@datetime').get()
+                    item["seccion"] = noticia.xpath('.//div[2]/div[2]/span[1]/a/text()').get(default="Sin sección")
+                    
+                    relative_url = noticia.xpath('.//div[2]/div[1]/h2/a/@href').get()
+                    item["url"] = response.urljoin(relative_url)
+                    item["date_saved"] = datetime.now().isoformat()
+
+                    yield item
+
+                except Exception as e:
+                    self.logger.error(f"Error procesando una noticia: {e}")
+
+            current_page = response.meta.get('page', 5)
+            next_page = current_page + 5
+
+            # Continuamos hasta start=30 como máximo
+            if next_page <= 30:
+                next_page_url = f"https://ahoraelpueblo.bo/index.php/nacional/economia?start={next_page}"
+                yield scrapy.Request(
+                    url=next_page_url,
+                    callback=self.parse_ahoraelpueblo,
+                    meta={'page': next_page}
+                )
+
+        except Exception as e:
+            self.logger.error(f"Error en parse_ahoraelpueblo: {e}")

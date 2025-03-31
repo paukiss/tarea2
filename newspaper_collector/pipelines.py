@@ -103,8 +103,13 @@ class NewspaperCollectorPipeline:
         else:
             transformed['date_saved_iso'] = None
 
-        # 6) Verificar si ya existe ese url en la BD
-        if 'url' in transformed:
+        # 6) Validar que el título no esté vacío
+        if not transformed.get('titulo'):
+            spider.logger.error("Título vacío: no se guarda la noticia.")
+            raise Exception("Título vacío: no se guarda la noticia.")
+
+        # 7) Verificar si ya existe esa url en la BD
+        if 'url' in transformed and transformed['url']:
             self.cur.execute("""
                 SELECT id FROM newspaper
                 WHERE url = %s
@@ -118,7 +123,7 @@ class NewspaperCollectorPipeline:
             spider.logger.info(f"NOTICIA YA EXISTE EN BD: {transformed['url']}")
             raise Exception("La noticia ya existe en la BD.")
         else:
-            # 7) Insertar en la tabla newspaper_data
+            # 8) Insertar en la tabla newspaper
             self.cur.execute("""
                 INSERT INTO newspaper (
                     data_id, titulo, descripcion, fecha, seccion, url, date_saved_iso
@@ -185,6 +190,7 @@ class NewspaperCollectorPipeline:
             return domain
         except:
             return None
+
 
 class JsonWriterPipeline:
     def open_spider(self, spider):

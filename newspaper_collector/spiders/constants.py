@@ -1,6 +1,12 @@
-ALLOWED_DOMAINS = ['eldeber.com.bo', 'lostiempos.com']
+ALLOWED_DOMAINS = [
+    "eldeber.com.bo",
+    "lostiempos.com",
+    "ahoraelpueblo.bo"
+]
 
-BASE_URLS = ["https://trabajito.com.bo/trabajo/"]
+ELDEBER_START_URL = "https://eldeber.com.bo/economia/1"
+LOSTIEMPOS_START_URL = "https://www.lostiempos.com/ultimas-noticias"
+AHORAELPUEBLO_START_URL = "https://ahoraelpueblo.bo/index.php/nacional/economia?start=5"
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -15,3 +21,5 @@ HEADERS = {
     'Sec-Fetch-User': '?1',
     'Cache-Control': 'max-age=0'
 }
+
+# scrapy runspider jobspider.py 
