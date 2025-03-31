@@ -20,10 +20,12 @@ class NewspaperCollectorPipeline:
         username = os.getenv('DB_USER')
         password = os.getenv('DB_PASSWORD')
         database = os.getenv('DB_DATABASE')
+        port = os.getenv('DB_PORT')
+        
 
         self.connection = psycopg2.connect(
             host=hostname,
-            port=5432,
+            port=port,
             user=username,
             password=password,
             dbname=database

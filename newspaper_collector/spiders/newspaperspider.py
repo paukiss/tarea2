@@ -93,7 +93,7 @@ class NewspaperSpider(scrapy.Spider):
             yield item
 
         # Control de paginación hasta la página 5
-        if page < 5:
+        if page < 50:
             next_page = page + 1
             next_page_url = f"https://eldeber.com.bo/economia/{next_page}"
             yield scrapy.Request(
@@ -171,7 +171,7 @@ class NewspaperSpider(scrapy.Spider):
             next_page = current_page + 5
 
             # Continuamos hasta start=30 como máximo
-            if next_page <= 30:
+            if next_page <= 1000:
                 next_page_url = f"https://ahoraelpueblo.bo/index.php/nacional/economia?start={next_page}"
                 yield scrapy.Request(
                     url=next_page_url,
