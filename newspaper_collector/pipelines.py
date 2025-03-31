@@ -1,11 +1,5 @@
-# Define your item pipelines here
-#
-# Don't forget to add your pipeline to the ITEM_PIPELINES setting
-# See: https://docs.scrapy.org/en/latest/topics/item-pipeline.html
+# pipelines.py
 
-
-# useful for handling different item types with a single interface
-# Useful for handling different item types with a single interface
 from itemadapter import ItemAdapter
 from datetime import datetime
 from dateutil import parser
@@ -16,10 +10,10 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 
-
 class NewspaperCollectorPipeline:
 
-    def __init__(self) -> None:
+    def __init__(self):
+        load_dotenv()  # Por si necesitas cargar variables de entorno .env
         # Información de conexión con la base de datos
         hostname = os.getenv('DB_HOST')
         username = os.getenv('DB_USER')
@@ -28,187 +22,165 @@ class NewspaperCollectorPipeline:
 
         self.connection = psycopg2.connect(
             host=hostname,
+            port=5432,
             user=username,
             password=password,
             dbname=database
         )
-
         self.cur = self.connection.cursor()
 
+        # Creamos la tabla (si no existe) adaptada a tus campos actuales:
         self.cur.execute("""
-            CREATE TABLE IF NOT EXISTS job_data (
+            CREATE TABLE IF NOT EXISTS newspaper (
                 id SERIAL PRIMARY KEY,
+                data_id TEXT,
+                titulo TEXT,
+                descripcion TEXT,
+                fecha TEXT,
+                seccion TEXT,
                 url TEXT,
-                title TEXT,
-                company TEXT,
-                location TEXT,
-                type_job TEXT,
-                job_description TEXT,
-                date_published TEXT,
-                date_expiration TEXT,
                 date_saved_iso TEXT
             );
         """)
-
         self.connection.commit()
 
-
     def process_item(self, item, spider):
-        # Convert the item to a dictionary first
+        """
+        Recibe un NewspaperItem con campos:
+          - data_id
+          - titulo
+          - descripcion
+          - fecha
+          - seccion
+          - url
+          - date_saved
+        Aplica transformaciones y lo guarda en la BD.
+        """
+        # Convertir item a diccionario
         transformed = dict(item)
 
-        # Convert all fields to lowercase
+        # 1) Convertir todos los campos string a minúsculas
         for key, value in transformed.items():
-            if transformed[key] and isinstance(transformed[key], str):
-                transformed[key] = transformed[key].lower()
+            if isinstance(value, str):
+                transformed[key] = value.lower().strip()
 
-        # Convert empty strings to None
+        # 2) Convertir cadenas vacías en None
         for field in transformed:
             if transformed[field] == "" or transformed[field] == " " or transformed[field] == "null":
                 transformed[field] = None
 
-        # Process job description - remove emojis and links
-        if 'job_description' in transformed and transformed['job_description']:
-            if isinstance(transformed['job_description'], list):
-                cleaned_desc = []
-                for paragraph in transformed['job_description']:
-                    # Remove emojis and keep only alphanumeric
-                    paragraph = self.clean_text(paragraph)
-                    # Remove links
-                    paragraph = self.remove_links(paragraph)
-                    cleaned_desc.append(paragraph)
-                transformed['job_description'] = ' '.join(cleaned_desc)
-            elif isinstance(transformed['job_description'], str):
-                # Remove emojis and keep only alphanumeric
-                transformed['job_description'] = self.clean_text(transformed['job_description'])
-                # Remove links
-                transformed['job_description'] = self.remove_links(transformed['job_description'])
+        # 3) Limpiar texto en "descripcion" (remover emojis, links, etc.)
+        if 'descripcion' in transformed and transformed['descripcion']:
+            # Si descripción llegó como lista, convertirla a un solo string.
+            if isinstance(transformed['descripcion'], list):
+                desc = ' '.join(transformed['descripcion'])
+            else:
+                desc = transformed['descripcion']
 
-        # Convert dates to datetime
-        self.convert_date_fields(transformed)
+            # Quitar emojis y caracteres no alfanuméricos
+            desc = self.clean_text(desc)
+            # Remover links
+            desc = self.remove_links(desc)
+            transformed['descripcion'] = desc
 
-        # Format Timestamp
-        if 'date_saved' in transformed:
+        # 4) Convertir "fecha" a ISO8601 si posible
+        #    (Algunos artículos tienen formatos de fecha raros, es opcional)
+        if 'fecha' in transformed and transformed['fecha']:
+            try:
+                parsed_date = parser.parse(transformed['fecha'])
+                transformed['fecha'] = parsed_date.isoformat()
+            except (ValueError, TypeError):
+                transformed['fecha'] = transformed['fecha']  # Mantén el valor original
+
+        # 5) Manejo de date_saved => date_saved_iso
+        if 'date_saved' in transformed and transformed['date_saved']:
             try:
                 dt = datetime.fromisoformat(transformed['date_saved'])
                 transformed['date_saved_iso'] = dt.isoformat()
             except:
-                pass
+                transformed['date_saved_iso'] = None
+        else:
+            transformed['date_saved_iso'] = None
 
-
-        if 'url' in transformed and transformed['url']:
-            transformed['domain'] = self.extract_domain(transformed['url'])
-
-        # Determine if job is active or expired
-        if 'date_expiration' in transformed and transformed['date_expiration']:
-            transformed['status'] = self.get_job_status(transformed['date_expiration'])
-
-        self.cur.execute("""
-            SELECT * FROM job_data
-            WHERE url = %s
-        """, (transformed['url'],))
-
-        # transformed['status'] = transformed['date_expiration'].apply(lambda x:self.get_job_status())
-
-        res = self.cur.fetchone()
+        # 6) Verificar si ya existe ese url en la BD
+        if 'url' in transformed:
+            self.cur.execute("""
+                SELECT id FROM newspaper
+                WHERE url = %s
+            """, (transformed['url'],))
+            res = self.cur.fetchone()
+        else:
+            res = None
 
         if res:
-            print(f"THIS item: {transformed['url']} is already in the DB.")
-            raise Exception(f"The item is already in the DB.")
+            # Si ya existe, puedes ignorarlo o "update". Aquí hacemos raise para saltar
+            spider.logger.info(f"NOTICIA YA EXISTE EN BD: {transformed['url']}")
+            raise Exception("La noticia ya existe en la BD.")
         else:
+            # 7) Insertar en la tabla newspaper_data
             self.cur.execute("""
-                INSERT INTO job_data (
-                    url, title, company, location, type_job,
-                    job_description, date_published, date_expiration, date_saved_iso
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO newspaper (
+                    data_id, titulo, descripcion, fecha, seccion, url, date_saved_iso
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
             """, (
-                transformed['url'],
-                transformed['title'],
-                transformed['company'],
-                transformed['location'],
-                transformed['type_job'],
-                transformed['job_description'],
-                transformed['date_published'],
-                transformed['date_expiration'],
-                transformed['date_saved_iso']
+                transformed.get('data_id'),
+                transformed.get('titulo'),
+                transformed.get('descripcion'),
+                transformed.get('fecha'),
+                transformed.get('seccion'),
+                transformed.get('url'),
+                transformed.get('date_saved_iso')
             ))
-
             self.connection.commit()
 
         return transformed
 
+    def close_spider(self, spider):
+        """Cierra la conexión al terminar."""
+        self.cur.close()
+        self.connection.close()
 
-        def close_connection(self, spider):
-            self.cur.close()
-            self.connection.close()
+    # --------------------------------------------------------------------------
+    #                     FUNCIONES AUXILIARES
+    # --------------------------------------------------------------------------
 
+    def clean_text(self, text):
+        """
+        Ejemplo simple de limpieza de emojis y todo lo que no sea
+        letras, números o espacios.
+        """
+        if not text:
+            return text
+        # Quitar emojis usando un regex, luego quitar caracteres no alfanuméricos
+        # excepto espacios:
+        # 1) Quita emojis (usando range Unicode de Emoticons) - a veces no basta
+        text = re.sub("[\U00010000-\U0010ffff]", "", text, flags=re.UNICODE)
+        # 2) Quita todo lo que no sea letras (a-z, A-Z), números o espacios
+        text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
+        # Normaliza espacios múltiples a uno solo
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
 
-        def clean_text(self, text):
-            """Remove all non-alphanumeric characters from text"""
-            if not text:
-                return text
-            # Keep only alphanumeric characters (a-z, A-Z, 0-9)
-            return re.sub(r'[^a-zA-Z0-9]', ' ', text)
+    def remove_links(self, text):
+        """
+        Remueve patrones de URL típicos.
+        """
+        if not text:
+            return text
 
+        # Patrón básico de URL
+        url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|' \
+                      r'(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+        text = re.sub(url_pattern, '', text)
+        text = re.sub(r'www\.[^\s]+', '', text)
+        return text.strip()
 
-        def remove_links(self, text):
-            """Remove URLs from text"""
-            if not text:
-                return text
-
-            # Common URL pattern
-            url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
-
-            # Remove URLs
-            text = re.sub(url_pattern, '', text)
-
-            # Also try to remove other possible link formats
-            text = re.sub(r'www\.[^\s]+', '', text)
-
-            return text.strip()
-
-        def convert_date_fields(self, transformed):
-            """Convert date strings to datetime objects"""
-            date_fields = ['date_published', 'date_expiration']
-
-            for field in date_fields:
-                if field in transformed and transformed[field]:
-                    try:
-                        # Try to parse the date string
-                        parsed_date = parser.parse(transformed[field])
-                        transformed[field] = parsed_date.isoformat()
-                    except (ValueError, TypeError):
-                        # If parsing fails, set as not supported
-                        transformed[field] = "not supported"
-
-
-        def extract_domain(self, url):
-            """Extract domain name from URL"""
-            try:
-                parsed_url = urlparse(url)
-                # Get domain with subdomain (e.g., trabajito.com.bo)
-                domain = parsed_url.netloc
-                return domain
-            except:
-                return None
-
-
-        def get_job_status(self, expiration_date):
-            """Determine if job is active or expired based on expiration date"""
-            try:
-                # Parse the expiration date
-                exp_date = parser.parse(expiration_date)
-
-                # Compare with current date
-                current_date = datetime.now()
-
-                # Return status
-                if exp_date > current_date:
-                    return "Active"
-                else:
-                    return "Expired"
-            except:
-                # If date parsing fails, default to "Unknown"
-                return "Unknown"
-
-
+    def extract_domain(self, url):
+        """Extract domain name from URL"""
+        try:
+            parsed_url = urlparse(url)
+            # Get domain with subdomain (e.g., trabajito.com.bo)
+            domain = parsed_url.netloc
+            return domain
+        except:
+            return None
