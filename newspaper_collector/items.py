@@ -19,11 +19,13 @@ def select_data(value):
 
 class NewspaperItem(scrapy.Item):
 
-    titulo = scrapy.Field()
-    descripcion = scrapy.Field()
-    fecha = scrapy.Field()
-    seccion = scrapy.Field()
-    url = scrapy.Field()
+    data_id = scrapy.Field(serializer=select_data)
+    titulo = scrapy.Field(serializer=select_data)
+    descripcion = scrapy.Field(serializer=select_data)
+    fecha = scrapy.Field(serializer=select_data)
+    seccion = scrapy.Field(serializer=select_data)
+    url = scrapy.Field(serializer=select_data)
+    date_saved = scrapy.Field(serializer=select_data)
 
     def __getitem__(self, key):
         value = super(NewspaperItem, self).__getitem__(key)
