@@ -1,0 +1,46 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Scrapy project logs and output
+.scrapy/
+logs/
+*.log
+*.db
+*.sqlite
+*.pkl
+*.json
+*.csv
+*.xml
+output/
+results/
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+coverage.xml
+.cache
+.pytest_cache/
+nosetests.xml
+test-results/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+.eggs/
+
+# Jupyter notebooks (if any)
+.ipynb_checkpoints/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
