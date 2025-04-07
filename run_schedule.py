@@ -11,7 +11,8 @@ def run_spider():
     ])
 
 # Ejecutar cada 2 días
-schedule.every(2).days.at("11:59").do(run_spider)
+schedule.every(2).days.do(run_spider)
+# schedule.every(10).seconds.do(run_spider)
 
 
 print("Scheduler iniciado. Presiona Ctrl+C para detener.")
