@@ -196,7 +196,8 @@ class NewspaperCollectorPipeline:
 
 class JsonWriterPipeline:
     def open_spider(self, spider):
-        self.file = open('news_output.json', 'w', encoding='utf-8')
+        fecha = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        self.file = open(f'data/salida_{fecha}.json', 'w', encoding='utf-8')
 
     def close_spider(self, spider):
         self.file.close()

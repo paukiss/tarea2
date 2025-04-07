@@ -10,7 +10,7 @@ logs/
 *.db
 *.sqlite
 *.pkl
-*.json
+# *.json
 *.csv
 *.xml
 output/
