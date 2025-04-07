@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 
 # Importar las constantes desde constants.py
-from constants import (
+from newspaper_collector.spiders.constants import (
     ALLOWED_DOMAINS,
     ELDEBER_START_URL,
     LOSTIEMPOS_START_URL,
