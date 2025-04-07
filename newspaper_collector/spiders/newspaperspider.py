@@ -77,7 +77,7 @@ class NewspaperSpider(scrapy.Spider):
             item = NewspaperItem()
 
             titulo = noticia.xpath('.//div[contains(@class, "titulo-teaser-2col")]/a/h2/text()').get(default="").strip()
-            descripcion = noticia.xpath('.//div[contains(@class, "entradilla-teaser-2col")]/div/p/text()').get(default="").strip()
+            descripcion = " ".join(noticia.xpath('.//div[contains(@class, "entradilla-teaser-2col")]//text()').getall()).strip()
             fecha = noticia.xpath('.//div[contains(@class, "fecha-teaser-2col")]/div/time/text()').get(default="").strip()
             seccion = noticia.xpath('.//div[contains(@class, "seccion-teaser-2col")]/div/div/a/text()').get(default="").strip()
             relative_url = noticia.xpath('.//div[contains(@class, "titulo-teaser-2col")]/a/@href').get(default="")
@@ -154,7 +154,7 @@ class NewspaperSpider(scrapy.Spider):
 
                     item["data_id"] = str(uuid.uuid4())
                     item["titulo"] = noticia.xpath('.//div[2]/div[1]/h2/a/text()').get(default="").strip()
-                    item["descripcion"] = noticia.xpath('.//div[contains(@class, "entradilla-teaser-2col")]/div/p/text()').get(default="").strip()
+                    item["descripcion"] = " ".join(noticia.xpath('.//div[contains(@class, "article-introtext")]//text()').getall()).strip()
                     item["fecha"] = noticia.xpath('.//time/@datetime').get()
                     item["seccion"] = noticia.xpath('.//div[2]/div[2]/span[1]/a/text()').get(default="Sin sección")
                     

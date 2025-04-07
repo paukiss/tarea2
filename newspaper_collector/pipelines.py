@@ -99,11 +99,11 @@ class NewspaperCollectorPipeline:
         if 'date_saved' in transformed and transformed['date_saved']:
             try:
                 dt = datetime.fromisoformat(transformed['date_saved'])
-                transformed['date_saved_iso'] = dt.isoformat()
+                transformed['date_saved'] = dt.isoformat()
             except:
-                transformed['date_saved_iso'] = None
+                transformed['date_saved'] = None
         else:
-            transformed['date_saved_iso'] = None
+            transformed['date_saved'] = None
 
         # 6) Validar que el título no esté vacío
         if not transformed.get('titulo'):
@@ -120,12 +120,16 @@ class NewspaperCollectorPipeline:
         else:
             res = None
 
+        # Actualizar el item con los valores transformados
+        adapter = ItemAdapter(item)
+        for key, value in transformed.items():
+            adapter[key] = value
+
         if res:
-            # Si ya existe, puedes ignorarlo o "update". Aquí hacemos raise para saltar
             spider.logger.info(f"NOTICIA YA EXISTE EN BD: {transformed['url']}")
-            raise Exception("La noticia ya existe en la BD.")
+            # Permitimos que el ítem continúe hacia el JSON
+            return item
         else:
-            # 8) Insertar en la tabla newspaper
             self.cur.execute("""
                 INSERT INTO newspaper (
                     data_id, titulo, descripcion, fecha, seccion, url, date_saved_iso
@@ -140,8 +144,9 @@ class NewspaperCollectorPipeline:
                 transformed.get('date_saved_iso')
             ))
             self.connection.commit()
+            return item
 
-        return transformed
+
 
     def close_spider(self, spider):
         """Cierra la conexión al terminar."""
@@ -203,6 +208,6 @@ class JsonWriterPipeline:
         self.file.close()
 
     def process_item(self, item, spider):
-        line = json.dumps(dict(item), ensure_ascii=False) + "\n"
+        line = json.dumps(ItemAdapter(item).asdict(), ensure_ascii=False) + "\n"
         self.file.write(line)
         return item
