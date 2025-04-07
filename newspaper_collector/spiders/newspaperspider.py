@@ -46,23 +46,23 @@ class NewspaperSpider(scrapy.Spider):
         time.sleep(1)  # Solo para ilustrar; en Scrapy no se recomienda usar sleep.
 
     def parse(self, response):
-        """
-        Se verifica la fuente (source) en `response.meta` o en la URL para
-        llamar a la función de parseo correspondiente.
-        """
         if response.status != 200:
             self.logger.warning(f"Failed to fetch {response.url}: {response.status}")
             return
 
         source = response.meta.get("source", "")
+        try:
+            if "eldeber" in source or "eldeber" in response.url:
+                yield from self.parse_eldeber(response)
+            elif "lostiempos" in source or "lostiempos" in response.url:
+                yield from self.parse_lostiempos(response)
+            elif "ahoraelpueblo" in source or "ahoraelpueblo" in response.url:
+                yield from self.parse_ahoraelpueblo(response)
+            else:
+                self.logger.warning(f"Fuente desconocida para URL: {response.url}")
+        except Exception as e:
+            self.logger.error(f"Error procesando {source} - {response.url}: {e}", exc_info=True)
 
-        # Llamamos a la función de parseo específica según la fuente
-        if "eldeber" in source or "eldeber" in response.url:
-            yield from self.parse_eldeber(response)
-        elif "lostiempos" in source or "lostiempos" in response.url:
-            yield from self.parse_lostiempos(response)
-        elif "ahoraelpueblo" in source or "ahoraelpueblo" in response.url:
-            yield from self.parse_ahoraelpueblo(response)
 
     def parse_eldeber(self, response):
         """
