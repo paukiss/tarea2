@@ -171,7 +171,7 @@ class NewspaperSpider(scrapy.Spider):
             next_page = current_page + 5
 
             # Continuamos hasta start=30 como máximo
-            if next_page <= 1000:
+            if next_page <= 100:
                 next_page_url = f"https://ahoraelpueblo.bo/index.php/nacional/economia?start={next_page}"
                 yield scrapy.Request(
                     url=next_page_url,
