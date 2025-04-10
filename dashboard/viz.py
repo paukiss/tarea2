@@ -5,7 +5,7 @@ import pandas as pd
 import requests
 import os
 from dotenv import load_dotenv
-from datetime import datetime, date # Import 'date'
+from datetime import datetime, date, timedelta # Import 'date'
 import logging
 # Ya no necesitamos importar psycopg2 directamente si usamos st.connection
 
