@@ -1,183 +1,278 @@
+# newspaper_spider.py
+
 import scrapy
-from newspaper_collector.items import NewspaperItem
+from newspaper_collector.items import NewspaperItem 
 import uuid
-import time
 from datetime import datetime
+import logging
 
-# Importar las constantes desde constants.py
-from newspaper_collector.spiders.constants import (
+from newspaper_collector.spiders.constants import ( 
     ALLOWED_DOMAINS,
-    ELDEBER_START_URL,
-    LOSTIEMPOS_START_URL,
-    AHORAELPUEBLO_START_URL
+    ELDEBER_SECTIONS, ELDEBER_PAGES_TO_SCRAPE,
+    LOSTIEMPOS_START_URL, LOSTIEMPOS_PAGES_TO_SCRAPE,
+    AHORAELPUEBLO_SECTIONS, AHORAELPUEBLO_PAGE_INCREMENT, AHORAELPUEBLO_PAGES_TO_SCRAPE,
+    HEADERS 
 )
-
 
 class NewspaperSpider(scrapy.Spider):
     name = "newspaper_spider"
-    allowed_domains = ALLOWED_DOMAINS  # Se obtienen de constants.py
+    allowed_domains = ALLOWED_DOMAINS
 
     def start_requests(self):
-        """
-        Lanzamos las URLs iniciales para cada periódico.
-        Ajusta o agrega más URLs según tu necesidad.
-        """
-        # Eldeber (comienza en la página 1)
-        yield scrapy.Request(
-            url=ELDEBER_START_URL,
-            callback=self.parse,
-            meta={'page': 1, 'source': 'eldeber'}
-        )
 
-        # Los Tiempos (sección de "últimas noticias")
+        for section, url_pattern in ELDEBER_SECTIONS.items():
+            start_url = url_pattern.format(page=1)
+            logging.info(f"Iniciando El Deber - Sección: {section}, URL: {start_url}")
+            yield scrapy.Request(
+                url=start_url,
+                callback=self.parse,
+                meta={
+                    'page': 1,
+                    'source': 'eldeber',
+                    'section': section,
+                    'url_pattern': url_pattern 
+                },
+                errback=self.handle_error
+            )
+
+        logging.info(f"Iniciando Los Tiempos - URL: {LOSTIEMPOS_START_URL}")
         yield scrapy.Request(
             url=LOSTIEMPOS_START_URL,
             callback=self.parse,
-            meta={'page': 1, 'source': 'lostiempos'}
+            meta={'page': 1, 'source': 'lostiempos'},
+            headers=HEADERS,
+            errback=self.handle_error
         )
 
-        # Ahora El Pueblo (comienza en start=5, irá saltando de 5 en 5)
-        yield scrapy.Request(
-            url=AHORAELPUEBLO_START_URL,
-            callback=self.parse,
-            meta={'page': 5, 'source': 'ahoraelpueblo'}
-        )
+        start_value = 0 
+        for section, url_pattern in AHORAELPUEBLO_SECTIONS.items():
+            start_url = url_pattern.format(start=start_value)
+            logging.info(f"Iniciando Ahora El Pueblo - Sección: {section}, URL: {start_url}")
+            yield scrapy.Request(
+                url=start_url,
+                callback=self.parse,
+                meta={
+                    'page': 1,
+                    'start_value': start_value,
+                    'source': 'ahoraelpueblo',
+                    'section': section,
+                    'url_pattern': url_pattern 
+                },
+                headers=HEADERS, 
+                errback=self.handle_error
+            )
 
-        time.sleep(1)  # Solo para ilustrar; en Scrapy no se recomienda usar sleep.
+    def handle_error(self, failure):
+        self.logger.error(f"Request failed: {failure.request.url} - {failure.value}")
 
     def parse(self, response):
         if response.status != 200:
-            self.logger.warning(f"Failed to fetch {response.url}: {response.status}")
-            return
+            self.logger.warning(f"Respuesta no exitosa ({response.status}) para {response.url}")
+            return 
 
         source = response.meta.get("source", "")
         try:
-            if "eldeber" in source or "eldeber" in response.url:
+            if source == 'eldeber':
                 yield from self.parse_eldeber(response)
-            elif "lostiempos" in source or "lostiempos" in response.url:
+            elif source == 'lostiempos':
                 yield from self.parse_lostiempos(response)
-            elif "ahoraelpueblo" in source or "ahoraelpueblo" in response.url:
+            elif source == 'ahoraelpueblo':
                 yield from self.parse_ahoraelpueblo(response)
             else:
-                self.logger.warning(f"Fuente desconocida para URL: {response.url}")
+                self.logger.warning(f"Fuente desconocida o no manejada para URL: {response.url}")
         except Exception as e:
             self.logger.error(f"Error procesando {source} - {response.url}: {e}", exc_info=True)
 
-
     def parse_eldeber(self, response):
-        """
-        Lógica de parseo específica para Eldeber.
-        Extrae noticias y controla la paginación (hasta página 5 en este ejemplo).
-        """
-        page = response.meta.get("page", 1)
 
-        # Selecciona los bloques de noticia
+        page = response.meta['page']
+        section = response.meta['section']
+        url_pattern = response.meta['url_pattern']
+        source = response.meta['source']
+
+        self.logger.info(f"Parseando El Deber - Sección: {section}, Página: {page}, URL: {response.url}")
+
         noticias = response.xpath('//div[contains(@class, "titulo-teaser-2col")]/a/h2/ancestor::article')
+        news_found_count = 0
         for noticia in noticias:
-            item = NewspaperItem()
+            try:
+                item = NewspaperItem()
 
-            titulo = noticia.xpath('.//div[contains(@class, "titulo-teaser-2col")]/a/h2/text()').get(default="").strip()
-            descripcion = " ".join(noticia.xpath('.//div[contains(@class, "entradilla-teaser-2col")]//text()').getall()).strip()
-            fecha = noticia.xpath('.//div[contains(@class, "fecha-teaser-2col")]/div/time/text()').get(default="").strip()
-            seccion = noticia.xpath('.//div[contains(@class, "seccion-teaser-2col")]/div/div/a/text()').get(default="").strip()
-            relative_url = noticia.xpath('.//div[contains(@class, "titulo-teaser-2col")]/a/@href').get(default="")
+                titulo = noticia.xpath('.//div[contains(@class, "titulo-teaser-2col")]/a/h2/text()').get(default="").strip()
+                descripcion = " ".join(noticia.xpath('.//div[contains(@class, "entradilla-teaser-2col")]//text()').getall()).strip()
+                fecha = noticia.xpath('.//div[contains(@class, "fecha-teaser-2col")]/div/time/text()').get(default="").strip()
+                relative_url = noticia.xpath('.//div[contains(@class, "titulo-teaser-2col")]/a/@href').get(default="")
 
-            item["data_id"] = str(uuid.uuid4())
-            item["titulo"] = titulo
-            item["descripcion"] = descripcion
-            item["fecha"] = fecha
-            item["seccion"] = seccion
-            item["url"] = response.urljoin(relative_url)
-            item["date_saved"] = datetime.now().isoformat()
+                if not titulo or not relative_url: # Validar que se extrajo lo mínimo
+                    self.logger.warning(f"Datos incompletos en noticia de {response.url}")
+                    continue
 
-            yield item
+                item["data_id"] = str(uuid.uuid4())
+                item["source"] = source
+                item["titulo"] = titulo
+                item["descripcion"] = descripcion
+                item["fecha"] = fecha
+                item["seccion"] = section # Usamos la sección de la URL procesada
+                item["url"] = response.urljoin(relative_url)
+                item["date_saved"] = datetime.now().isoformat()
 
-        # Control de paginación hasta la página 5
-        if page < 50:
+                yield item
+                news_found_count += 1
+            except Exception as e:
+                 self.logger.error(f"Error procesando item de El Deber ({response.url}): {e}", exc_info=True)
+
+        self.logger.info(f"Encontradas {news_found_count} noticias en El Deber - Sección: {section}, Página: {page}")
+
+        # --- Paginación El Deber ---
+        if page < ELDEBER_PAGES_TO_SCRAPE:
             next_page = page + 1
-            next_page_url = f"https://eldeber.com.bo/economia/{next_page}"
+            next_page_url = url_pattern.format(page=next_page)
+            self.logger.info(f"Solicitando siguiente página El Deber - Sección: {section}, Página: {next_page}, URL: {next_page_url}")
             yield scrapy.Request(
                 url=next_page_url,
                 callback=self.parse,
-                meta={'page': next_page, 'source': 'eldeber'}
+                meta={
+                    'page': next_page,
+                    'source': source,
+                    'section': section,
+                    'url_pattern': url_pattern
+                },
+                headers=HEADERS, 
+                errback=self.handle_error
             )
 
     def parse_lostiempos(self, response):
-        """
-        Lógica de parseo específica para Los Tiempos.
-        Extrae las noticias y controla la paginación (hasta la página 8 en este ejemplo).
-        """
-        page = response.meta.get("page", 1)
+        page = response.meta['page']
+        source = response.meta['source']
+        self.logger.info(f"Parseando Los Tiempos - Página: {page}, URL: {response.url}")
 
-        # Extrae los bloques de noticias
         noticias = response.xpath('//section[contains(@class, "pane-views-panes")]//div[contains(@class, "views-row")]')
+        news_found_count = 0
         for noticia in noticias:
-            item = NewspaperItem()
+             try:
+                item = NewspaperItem()
 
-            titulo = noticia.xpath('.//div[contains(@class, "views-field-title term")]/a/text()').get(default="Sin título").strip()
-            resumen = noticia.xpath('.//div[contains(@class, "views-field-field-noticia-sumario")]/span/text()').get(default="Sin resumen").strip()
-            fecha = noticia.xpath('.//span[contains(@class, "views-field-field-noticia-fecha")]/span/text()').get(default="Sin fecha").strip()
-            seccion = noticia.xpath('.//span[contains(@class, "views-field-seccion")]/span/a/text()').get(default="Sin sección").strip()
-            url_noticia = noticia.xpath('.//div[contains(@class, "views-field-title term")]/a/@href').get(default="")
+                titulo = noticia.xpath('.//div[contains(@class, "views-field-title term")]/a/text()').get(default="").strip()
+                resumen = noticia.xpath('.//div[contains(@class, "views-field-field-noticia-sumario")]/span/text()').get(default="").strip()
+                fecha = noticia.xpath('.//span[contains(@class, "views-field-field-noticia-fecha")]/span/text()').get(default="").strip()
+                seccion = noticia.xpath('.//span[contains(@class, "views-field-seccion")]/span/a/text()').get(default="Ultimas Noticias").strip() 
+                url_noticia = noticia.xpath('.//div[contains(@class, "views-field-title term")]/a/@href').get(default="")
 
-            item["data_id"] = str(uuid.uuid4())
-            item["titulo"] = titulo
-            item["descripcion"] = resumen
-            item["fecha"] = fecha
-            item["seccion"] = seccion
-            item["url"] = response.urljoin(url_noticia)
-            item["date_saved"] = datetime.now().isoformat()
+                if not titulo or not url_noticia:
+                    self.logger.warning(f"Datos incompletos en noticia de {response.url}")
+                    continue
 
-            yield item
+                item["data_id"] = str(uuid.uuid4())
+                item["source"] = source
+                item["titulo"] = titulo
+                item["descripcion"] = resumen
+                item["fecha"] = fecha
+                item["seccion"] = seccion
+                item["url"] = response.urljoin(url_noticia)
+                item["date_saved"] = datetime.now().isoformat()
 
-        # Paginación para Los Tiempos hasta la página 8
-        if page < 8:
+                yield item
+                news_found_count += 1
+             except Exception as e:
+                 self.logger.error(f"Error procesando item de Los Tiempos ({response.url}): {e}", exc_info=True)
+
+        self.logger.info(f"Encontradas {news_found_count} noticias en Los Tiempos - Página: {page}")
+
+        if page < LOSTIEMPOS_PAGES_TO_SCRAPE:
             next_page_href = response.xpath('//li[contains(@class, "pager-next")]/a/@href').get()
             if next_page_href:
                 next_page_url = response.urljoin(next_page_href)
+                self.logger.info(f"Solicitando siguiente página Los Tiempos - Página: {page + 1}, URL: {next_page_url}")
                 yield scrapy.Request(
                     url=next_page_url,
                     callback=self.parse,
-                    meta={'page': page + 1, 'source': 'lostiempos'}
+                    meta={'page': page + 1, 'source': source},
+                    errback=self.handle_error
                 )
+            else:
+                 self.logger.info(f"No se encontró enlace a siguiente página en Los Tiempos - Página: {page}")
+
 
     def parse_ahoraelpueblo(self, response):
-        """
-        Lógica de parseo específica para Ahora El Pueblo.
-        Avanza en saltos de 5 y se detiene cuando la paginación excede start=30.
-        """
-        try:
-            noticias = response.xpath('//*[@id="sp-component"]/div/div[2]/div[2]/div/div/div')
-            for noticia in noticias:
-                try:
-                    item = NewspaperItem()
+        page = response.meta['page'] 
+        start_value = response.meta['start_value']
+        section = response.meta['section']
+        url_pattern = response.meta['url_pattern']
+        source = response.meta['source']
 
-                    item["data_id"] = str(uuid.uuid4())
-                    item["titulo"] = noticia.xpath('.//div[2]/div[1]/h2/a/text()').get(default="").strip()
-                    item["descripcion"] = " ".join(noticia.xpath('.//div[contains(@class, "article-introtext")]//text()').getall()).strip()
-                    item["fecha"] = noticia.xpath('.//time/@datetime').get()
-                    item["seccion"] = noticia.xpath('.//div[2]/div[2]/span[1]/a/text()').get(default="Sin sección")
-                    
-                    relative_url = noticia.xpath('.//div[2]/div[1]/h2/a/@href').get()
-                    item["url"] = response.urljoin(relative_url)
-                    item["date_saved"] = datetime.now().isoformat()
+        self.logger.info(f"Parseando Ahora El Pueblo - Sección: {section}, Página conceptual: {page} (start={start_value}), URL: {response.url}")
 
-                    yield item
+        noticias = response.xpath('//div[@class="article-list"]//div[@itemprop="blogPost"]')
+        if not noticias:
+             noticias = response.xpath('//*[@id="sp-component"]/div/div[2]/div[2]/div/div/div')
 
-                except Exception as e:
-                    self.logger.error(f"Error procesando una noticia: {e}")
+        news_found_count = 0
+        for noticia in noticias:
+            try:
+                item = NewspaperItem()
 
-            current_page = response.meta.get('page', 5)
-            next_page = current_page + 5
+                titulo_elem = noticia.xpath('.//h2[@itemprop="name"]/a/text()') 
+                if not titulo_elem:
+                    titulo_elem = noticia.xpath('.//div[2]/div[1]/h2/a/text()') 
 
-            # Continuamos hasta start=30 como máximo
-            if next_page <= 100:
-                next_page_url = f"https://ahoraelpueblo.bo/index.php/nacional/economia?start={next_page}"
-                yield scrapy.Request(
-                    url=next_page_url,
-                    callback=self.parse_ahoraelpueblo,
-                    meta={'page': next_page}
-                )
+                desc_elem = noticia.xpath('.//div[@itemprop="description"]//text()') 
+                if not desc_elem:
+                     desc_elem = noticia.xpath('.//div[contains(@class, "article-introtext")]//text()') 
 
-        except Exception as e:
-            self.logger.error(f"Error en parse_ahoraelpueblo: {e}")
+                fecha_elem = noticia.xpath('.//time[@itemprop="datePublished"]/@datetime') 
+                if not fecha_elem:
+                    fecha_elem = noticia.xpath('.//time/@datetime') 
+
+                seccion_elem = noticia.xpath('.//a[@itemprop="genre"]/text()') 
+                if not seccion_elem:
+                    seccion_elem = noticia.xpath('.//div[2]/div[2]/span[1]/a/text()') 
+
+                url_elem = noticia.xpath('.//h2[@itemprop="name"]/a/@href')
+                if not url_elem:
+                    url_elem = noticia.xpath('.//div[2]/div[1]/h2/a/@href')
+
+
+                titulo = titulo_elem.get(default="").strip()
+                relative_url = url_elem.get()
+                descripcion = " ".join(desc_elem.getall()).strip()
+                fecha = fecha_elem.get()
+
+                if not titulo or not relative_url:
+                    self.logger.warning(f"Datos incompletos en noticia de {response.url}")
+                    continue
+
+                item["data_id"] = str(uuid.uuid4())
+                item["source"] = source
+                item["titulo"] = titulo
+                item["descripcion"] = descripcion
+                item["fecha"] = fecha
+                item["seccion"] = section 
+                item["url"] = response.urljoin(relative_url)
+                item["date_saved"] = datetime.now().isoformat()
+
+                yield item
+                news_found_count += 1
+
+            except Exception as e:
+                self.logger.error(f"Error procesando item de Ahora El Pueblo ({response.url}): {e}", exc_info=True)
+
+        self.logger.info(f"Encontradas {news_found_count} noticias en Ahora El Pueblo - Sección: {section}, Página: {page}")
+
+        if page < AHORAELPUEBLO_PAGES_TO_SCRAPE:
+            next_page = page + 1
+            next_start_value = start_value + AHORAELPUEBLO_PAGE_INCREMENT
+            next_page_url = url_pattern.format(start=next_start_value)
+
+            self.logger.info(f"Solicitando siguiente página Ahora El Pueblo - Sección: {section}, Página conceptual: {next_page} (start={next_start_value}), URL: {next_page_url}")
+            yield scrapy.Request(
+                url=next_page_url,
+                callback=self.parse, 
+                meta={
+                    'page': next_page,
+                    'start_value': next_start_value,
+                    'source': source,
+                    'section': section,
+                    'url_pattern': url_pattern
+                },
+                errback=self.handle_error
+            )

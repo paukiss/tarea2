@@ -6,13 +6,12 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 import logging
-from dateutil import parser # Necesitamos importar parser aquí ahora
-from datetime import date, time # Importar date y time para type hints o checks
+from dateutil import parser 
+from datetime import date, time
 
 class ConsumptionZonePipeline:
 
     def __init__(self):
-        """Inicializa la conexión y crea la tabla de consumo con columnas separadas para fecha y hora."""
         load_dotenv()
         hostname = os.getenv('DB_HOST')
         username = os.getenv('DB_USER')
@@ -72,10 +71,6 @@ class ConsumptionZonePipeline:
             logging.info("Pipeline de Consumo: Conexión a BD cerrada.")
 
     def process_item(self, item, spider):
-        """
-        Procesa el item, parsea la cadena 'fecha' para obtener fecha y hora,
-        y lo inserta en la tabla de consumo.
-        """
         if not self.cur or not self.connection:
             spider.logger.error(f"Pipeline de Consumo: Omitiendo item por falta de conexión a BD: {item.get('url')}")
             return item
@@ -83,7 +78,6 @@ class ConsumptionZonePipeline:
         adapter = ItemAdapter(item)
         url_item = adapter.get('url')
 
-        # Verificar duplicado (sin cambios)
         try:
             self.cur.execute("SELECT id FROM consumption_analytics WHERE url = %s", (url_item,))
             result = self.cur.fetchone()
@@ -94,32 +88,23 @@ class ConsumptionZonePipeline:
             spider.logger.error(f"Pipeline de Consumo: Error al verificar duplicado para {url_item}: {e}")
             return item
 
-        # Si no existe, procedemos a transformar e insertar
         try:
-            # Extraer fuente (sin cambios)
             fuente = self.extract_fuente(url_item)
 
-            # ----- MODIFICACIÓN 2: Parsear fecha y hora desde la cadena 'fecha' -----
-            fecha_str = adapter.get('fecha') # Obtener la cadena de fecha del item
+            fecha_str = adapter.get('fecha') 
             fecha_noticia_obj = None
             hora_noticia_obj = None
 
-            if fecha_str: # Si la cadena de fecha no es None o vacía
+            if fecha_str:
                 try:
-                    # Intentar parsear la cadena completa
                     parsed_datetime = parser.parse(fecha_str)
-                    fecha_noticia_obj = parsed_datetime.date() # Extraer objeto Date
-                    hora_noticia_obj = parsed_datetime.time()   # Extraer objeto Time
+                    fecha_noticia_obj = parsed_datetime.date() 
+                    hora_noticia_obj = parsed_datetime.time()  
                 except (ValueError, TypeError, OverflowError, parser.ParserError) as e:
-                    # Si falla el parseo, dejamos los objetos como None y logueamos
                     spider.logger.warning(f"Pipeline de Consumo: No se pudo parsear fecha/hora desde '{fecha_str}' para {url_item}: {e}. Se guardará como NULL.")
                     fecha_noticia_obj = None
                     hora_noticia_obj = None
-            # Si fecha_str era None o vacía, los objetos ya son None
-            # ----- FIN MODIFICACIÓN 2 -----
 
-            # ----- MODIFICACIÓN 3: Insertar en la tabla -----
-            # Incluimos la columna hora_noticia y usamos los objetos parseados
             self.cur.execute("""
                 INSERT INTO consumption_analytics
                 (titulo, fecha_noticia, hora_noticia, seccion, fuente, url)
@@ -127,8 +112,8 @@ class ConsumptionZonePipeline:
                 ON CONFLICT (url) DO NOTHING;
             """, (
                 adapter.get('titulo'),
-                fecha_noticia_obj, # Objeto Date o None
-                hora_noticia_obj,  # Objeto Time o None
+                fecha_noticia_obj, 
+                hora_noticia_obj, 
                 adapter.get('seccion'),
                 fuente,
                 url_item
@@ -136,7 +121,6 @@ class ConsumptionZonePipeline:
             self.connection.commit()
             if self.cur.rowcount > 0:
                  spider.logger.info(f"Pipeline de Consumo: Item insertado en Consumption Zone: {url_item}")
-            # ----- FIN MODIFICACIÓN 3 -----
 
         except psycopg2.Error as e:
             spider.logger.error(f"Pipeline de Consumo: Error al insertar item {url_item}: {e}")
@@ -152,7 +136,6 @@ class ConsumptionZonePipeline:
 
     # --- Funciones auxiliares ---
     def extract_fuente(self, url):
-        # (Sin cambios)
         if not url: return None
         try:
             domain = urlparse(url).netloc
@@ -164,8 +147,3 @@ class ConsumptionZonePipeline:
                 if len(parts) >= 2: return parts[-2] if parts[-2] != 'com' else parts[0]
                 return domain
         except Exception: return None
-
-    # ----- MODIFICACIÓN 4: Eliminar función parse_fecha (si existía antes) -----
-    # La lógica de parseo ahora está dentro de process_item
-    # def parse_fecha(self, fecha_str): # <--- Esta función ya no se usa/necesita
-    #     ...

@@ -26,6 +26,7 @@ class NewspaperItem(scrapy.Item):
     seccion = scrapy.Field(serializer=select_data)
     url = scrapy.Field(serializer=select_data)
     date_saved = scrapy.Field(serializer=select_data)
+    source = scrapy.Field()
 
     def __getitem__(self, key):
         value = super(NewspaperItem, self).__getitem__(key)
