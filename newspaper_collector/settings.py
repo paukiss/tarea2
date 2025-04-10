@@ -63,9 +63,9 @@ ROBOTSTXT_OBEY = True
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 ITEM_PIPELINES = {
-   "newspaper_collector.landing_zone_pipeline.LandingZonePipeline": 100,
-   "newspaper_collector.refined_zone_pipeline.RefinedZonePipeline": 200,
-   "newspaper_collector.consumption_zone_pipeline.ConsumptionZonePipeline": 300,
+   "newspaper_collector.pipelines.landing_zone_pipeline.LandingZonePipeline": 100,
+   "newspaper_collector.pipelines.refined_zone_pipeline.RefinedZonePipeline": 200,
+   "newspaper_collector.pipelines.consumption_zone_pipeline.ConsumptionZonePipeline": 300,
 }
 
 # Enable and configure the AutoThrottle extension (disabled by default)
