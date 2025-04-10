@@ -124,26 +124,57 @@ class RefinedZonePipeline:
         for key, value in transformed.items():
             adapter[key] = value
 
-        if res:
+        # ... (código anterior) ...
+
+        if res: # Si la URL ya existe
             spider.logger.info(f"NOTICIA YA EXISTE EN BD: {transformed['url']}")
-            # Permitimos que el ítem continúe hacia el JSON
             return item
-        else:
-            self.cur.execute("""
-                INSERT INTO newspaper (
-                    data_id, titulo, descripcion, fecha, seccion, url, date_saved_iso
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (
-                transformed.get('data_id'),
-                transformed.get('titulo'),
-                transformed.get('descripcion'),
-                transformed.get('fecha'),
-                transformed.get('seccion'),
-                transformed.get('url'),
-                transformed.get('date_saved_iso')
-            ))
-            self.connection.commit()
-            return item
+        else: # Si la URL NO existe, intentar insertar
+            # ----- INICIO DEL BLOQUE PROBLEMÁTICO -----
+            try:
+                self.cur.execute("""
+                    INSERT INTO newspaper (
+                        data_id, titulo, descripcion, fecha, seccion, url, date_saved_iso
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    transformed.get('data_id'),
+                    transformed.get('titulo'),
+                    transformed.get('descripcion'),
+                    transformed.get('fecha'), # Usando 'fecha' como está en tu código original
+                    transformed.get('seccion'),
+                    transformed.get('url'),
+                    # OJO: Tu código original usa transformed.get('date_saved_iso')
+                    # pero el paso 5 lo guarda en transformed['date_saved'].
+                    # Esto podría ser un error, pero no causa el InFailedSqlTransaction.
+                    # Asumiré que querías usar transformed.get('date_saved') basado en el paso 5.
+                    # Si 'date_saved_iso' es el nombre correcto de la columna, usa ese .get()
+                    transformed.get('date_saved') # O transformed.get('date_saved_iso') si esa es la columna
+                ))
+                self.connection.commit() # Commit SOLO si el INSERT fue exitoso
+                spider.logger.debug(f"RefinedZonePipeline: Item insertado: {transformed.get('url')}") # Mejor debug si es operación normal
+            except psycopg2.Error as e: # Captura errores específicos de la BD (Clave duplicada, tipo incorrecto, etc.)
+                 spider.logger.error(f"RefinedZonePipeline: Error psycopg2 al INSERTAR {transformed.get('url')}: {e}")
+                 # !!!!! FALTA ROLLBACK !!!!!
+                 # Si ocurre un error aquí (p.ej., un dato viola una restricción),
+                 # la transacción se aborta, PERO NO LA CIERRAS.
+                 # El código continúa y el *siguiente* item que intente usar la BD
+                 # encontrará la transacción abortada.
+
+                 # ----- SOLUCIÓN: AÑADIR ROLLBACK -----
+                 self.connection.rollback()
+                 # -------------------------------------
+
+            except Exception as e: # Captura otros errores inesperados
+                 spider.logger.error(f"RefinedZonePipeline: Error inesperado al INSERTAR {transformed.get('url')}: {e}", exc_info=True)
+                 # !!!!! TAMBIÉN FALTA ROLLBACK !!!!!
+                 # Por seguridad, haz rollback también aquí.
+                 try:
+                     self.connection.rollback()
+                 except psycopg2.Error as rb_err:
+                     spider.logger.error(f"RefinedZonePipeline: Error durante rollback tras excepción: {rb_err}")
+
+            # ----- FIN DEL BLOQUE PROBLEMÁTICO -----
+            return item # Devuelve el item después de intentar insertar (o fallar)
 
 
 
