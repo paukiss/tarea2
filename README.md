@@ -1,6 +1,6 @@
-# Newspaper Collector (Tarea 2)
+# Newspaper Collector - Proyecto Final
 
-Este proyecto es una implementación de la **Tarea 2: Limpieza y Transformación de Datos con Scrapy**, cuyo objetivo es extraer, limpiar y almacenar artículos de noticias desde tres periódicos bolivianos: **El Deber**, **Los Tiempos** y **Ahora El Pueblo**.
+Este proyecto es una implementación del proyecto final uniendo la tarea 1 y tarea 2, cuyo objetivo es extraer, limpiar y almacenar ETL de artículos de noticias desde tres periódicos bolivianos: **El Deber**, **Los Tiempos** y **Ahora El Pueblo**.
 
 El sistema aplica un flujo completo de extracción, validación, transformación y almacenamiento dual, en un archivo **JSON** y en una base de datos **PostgreSQL**.
 
@@ -25,7 +25,7 @@ Se realiza mediante `pipelines.py` e incluye:
 Se utilizó `items.py` para definir la estructura esperada de los datos (`NewspaperItem`), incluyendo validaciones de tipo por campo.
 
 🗃️ **Almacenamiento Dual:**
-- Se genera un archivo JSON (`news_output.json`) con los datos limpios.
+- Se genera un archivo JSON (`datalake/LANDING_ZONE/....json`) con los datos limpios.
 - Se insertan los datos en una base de datos PostgreSQL, usando `psycopg2`.
 
 🔁 **Prevención de Duplicados:**  
@@ -96,4 +96,28 @@ python run_schedule.py
 
 El scraper comenzará el proceso completo de scraping, limpieza y almacenamiento.
 
+## Ejecucion Dashboard
 
+Para hacer correr el dashboard, se tiene que tener datos en el Consumption Zone, ya que desde esa tabla obtendra los datos.
+
+Luego en el mismo enviroment `(env)` de python con los requerimientos instalados, desde la carpeta raiz correr lo siguiente
+
+```bash
+cd dashboard
+```
+
+Y luego ejecutar:
+
+```bash
+streamlit run viz.py
+```
+
+Capturas del dashboard 
+
+![dashboard](img/dashboard_1.png)
+
+
+![dashboard2](img/dashboard_2.png)
+
+
+![dashboard3](img/dashboard_3.png)
